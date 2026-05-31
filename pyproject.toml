@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "openhome-ambient-announcer"
+version = "0.2.0"
+description = "OpenHome 常駐 Ability で claude-org 組織の状況を音声アナウンスする一方向連携 (M2 PoC, モック)"
+requires-python = ">=3.10"
+dependencies = []
+
+[project.optional-dependencies]
+dev = ["pytest>=8"]
+
+[tool.setuptools]
+packages = ["openhome_org_voice_core", "announcer"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
