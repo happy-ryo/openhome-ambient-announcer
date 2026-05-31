@@ -4,13 +4,15 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "openhome-ambient-announcer"
-version = "0.2.0"
-description = "OpenHome 常駐 Ability で claude-org 組織の状況を音声アナウンスする一方向連携 (M2 PoC, モック)"
+version = "0.3.0"
+description = "OpenHome 常駐 Ability で claude-org 組織の状況を音声アナウンスする一方向連携 (M3 実接続)"
 requires-python = ">=3.10"
 dependencies = []
 
 [project.optional-dependencies]
 dev = ["pytest>=8"]
+# M3 ライブ接続 (run_live.py) のみで必要。モック/単体テストには不要。
+live = ["websockets>=12"]
 
 [tool.setuptools]
 packages = ["openhome_org_voice_core", "announcer"]
