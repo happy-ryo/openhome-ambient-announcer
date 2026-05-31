@@ -1,0 +1,15 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+build/
+dist/
+
+# PoC ランタイム出力
+var/
+
+# claude-org ワーカー内部ファイル (public リポには含めない)
+CLAUDE.md
+.claude/
+send_plan.json
