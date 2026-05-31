@@ -171,6 +171,54 @@ DevKit 実機受領後に、マイク/無線/2 ランタイム境界等を実測
 - ブリッジは組織 state を**読み取り専用**で開く。
 - これらをコードレビュー観点（M2 以降の PR チェックリスト）に明文化し、回帰を防ぐ。
 
+### 4.5 M3 実測結果（実 OpenHome 接続で確定 `✓`）
+
+M3 で cloud API キー経由の実接続を行い、`≈` 点を実測で確定した。組織イベント →
+実音声アナウンスの end-to-end を実際に通過（実音声 MP3 を受信・保存）。
+
+**接続経路の確定（M1 想定の更新）**
+- M1 §2.1 は「クラウド常駐 Background Ability が**ローカル**共有 JSON を polling し
+  verbatim `speak()`」を想定したが、**cloud API キー単独ではこの経路に到達できない** `✓`。
+  - REST API（`https://app.openhome.com`, `X-API-KEY`）は **agent/ability 管理専用**で、
+    text→音声の TTS 終端は無い `✓`。
+  - `speak()` / `send_interrupt_signal()` / `write_file()` / `session_tasks.sleep()` 等は
+    **OpenHome ランタイム内（Ability サンドボックス / DevKit）でのみ**呼べる SDK メソッド `✓`
+    （SDK Reference で確認）。ローカルプロセスから cloud キーでは呼べない。
+  - したがって cloud キー経路では、**ローカルの announcer が cloud agent の音声を
+    WebSocket voice-stream 経由で駆動**する構成を採用（中核パイプラインは M2 と同一で、
+    差し替わるのは Speaker 実装のみ）。Background Ability + ローカルファイル協調パターン自体は
+    ランタイム内では有効（SDK Reference の coordination パターン `✓`）であり、DevKit / アップロード
+    Ability 経路で別途検証する。
+
+**WebSocket voice-stream の実仕様 `✓`**
+- URL: `wss://app.openhome.com/websocket/voice-stream/{OPENHOME_API_KEY}/{AGENT_ID}`
+  （`AGENT_ID=0` で既定 agent）。鍵は URL path。**鍵は環境変数からのみ取得し、コミット/ログ禁止**。
+- **接続の必須条件（実測でハマった点）**: クライアントは **ブラウザ風 `User-Agent`** ヘッダを
+  付けること。付けないと（websockets ライブラリ既定 UA 等）OpenHome のエッジ/WAF に弾かれ、
+  どのメッセージでも・idle でも **`1008 policy violation`（reason 空）で即切断**される。
+  `Origin` だけでは不十分で、決定的に必要なのは `User-Agent` だった。
+- **テキスト送信形式**: `{"type":"transcribed","data":"<text>"}`（ユーザ発話としてイベント文を送る）。
+- **通話シーケンス（実測で確定）**: 接続後 `status:call_initialized` → agent がまず
+  **cold_start の挨拶**を発話する（turn 0: `audio-init` → `audio` → `audio-end`）。
+  **挨拶の `audio-end` を待ってから** `transcribed` でイベント文を送ると、agent が
+  その内容に対する応答を発話する（turn 1）。→ 本連携は **turn 1（応答）の音声**を保存する。
+  - 挨拶中にイベント文を送ると無視される（必ず挨拶完了後に送る）のが実測でハマった点。
+  - 受信音声は **ElevenLabs 由来の MP3**（`16-bit PCM/16kHz` は*クライアント→サーバ*のマイク仕様）。
+- **会話調（非逐語）**: agent は送信テキストを逐語で読まず、ペルソナとして内容に**反応**して発話する
+  （例: ブロッカー通知 →「それは大変ですね…代替策を検討しますか？」）。announcer 用途では会話調を許容
+  （逐語化は agent の raw_prompt 設定変更が必要なため本 M3 ではスコープ外）。
+
+**`≈` 検証点（§4.2）の確定**
+| # | 確定内容 |
+|---|---|
+| V-2 `send_interrupt_signal()` | cloud WS には verbatim な割り込み終端は無し。通話中の割り込みは `{"type":"text","data":"interrupt-event"}` で表現。`send_interrupt_signal()` SDK メソッドは Ability ランタイム内専用。**一方向 announcer ではローカル側で no-op 記録**とした。 |
+| V-4 ポーリング間隔/レイテンシ | **イベント文 → 応答音声受信完了 ≈ 8.5–9 秒/通話**（実測, 既定 agent / 日本語イベント文）。うち大半は**毎通話の固定オーバーヘッド**（接続後 `call_initialized` まで ≈6 秒 ＋ 挨拶 turn）であり、1 アナウンス = 1 新規接続にしているため毎回発生する。§1.2 の低レイテンシ目標に対しては、持続接続化や挨拶のスキップ手段の検討余地あり（本 M3 ではスコープ外）。 |
+| V-5 共有 JSON 読み取り競合 | M2 の原子的 rename（`os.replace`）で回避済。実音声経路でも問題なし。 |
+
+> 注: V-1（Background 常駐安定性）・V-3（Ability のファイル永続）は OpenHome ランタイム内 Ability
+> （DevKit / アップロード）でのみ検証可能な項目であり、cloud キー経路（本 M3）では対象外。
+> DevKit 実機 / Local Connect 経路で別途検証する。
+
 ---
 
 ## 5. 姉妹プロジェクトとの共有コンポーネント（共通ライブラリ化）
@@ -217,7 +265,7 @@ DevKit 実機受領後に、マイク/無線/2 ランタイム境界等を実測
 |---|---|---|
 | **M1（本書）** | 設計・技術調査。アーキテクチャ／イベント・テンプレート／要検証 API／共有コンポーネントの確定 | ✅ 本ドキュメント |
 | **M2** | PoC（モック）。共有 JSON を手動投入し、Background Ability の読み上げ・冪等性・流量制御を検証 | V-1〜V-5 を消化 |
-| **M3** | 実接続。組織 state からの実エクスポータ接続、レイテンシ実測、（可能なら）DevKit 実機 | `≈/◆` を `✓` へ更新 |
+| **M3** | 実接続。cloud API キー経由で WebSocket voice-stream に接続し、組織イベント → 実音声アナウンス（MP3）の end-to-end を通過。レイテンシ実測。 | ✅ §4.5 に実測結果。`≈` の到達可能点を `✓` 化（V-1/V-3 は DevKit 経路で別途） |
 
 ---
 

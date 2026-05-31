@@ -15,7 +15,12 @@
 from .envelope import EVENT_TYPES, PRIORITIES, OrgEvent, stable_event_id
 from .bridge import StateBridge
 from .poller import EventPoller
-from .speaker import MockSpeaker, Speaker
+from .speaker import (
+    MockSpeaker,
+    OpenHomeWebSocketSpeaker,
+    Speaker,
+    Utterance,
+)
 
 __all__ = [
     "OrgEvent",
@@ -26,4 +31,6 @@ __all__ = [
     "EventPoller",
     "Speaker",
     "MockSpeaker",
+    "OpenHomeWebSocketSpeaker",
+    "Utterance",
 ]
